@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environments
+.venv/
+venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (large files - keep only code)
+data/*.csv
+data/*.pkl
+data/*.parquet
+
+# Cached artifacts
+outputs/cache/
+*.pkl
+
+# Claude Code
+.claude/
+.codex/
+
+# Reference solutions (not our code)
+news_recommender/
+top2/
+top3/
+top5/
