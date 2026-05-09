@@ -13,7 +13,8 @@ def recall_at_k(recall_dict, test_labels, k):
     """
     hits, total = 0, 0
     for uid, true_item in test_labels.items():
-        if uid not in recall_dict:
+        if uid not in recall_dict:  # 冷启动用户 如何处理？
+            total += 1
             continue
         candidates = recall_dict[uid]
         if isinstance(candidates[0], tuple):
@@ -24,7 +25,7 @@ def recall_at_k(recall_dict, test_labels, k):
     return hits / total if total > 0 else 0.0
 
 
-def mrr_at_k(recall_dict, test_labels, k=5):
+def mrr_at_k(recall_dict, test_labels, k=5):  # 平均倒数排名（Mean Reciprocal Rank,MRR）
     """Mean Reciprocal Rank at k.
 
     Args:
@@ -35,6 +36,7 @@ def mrr_at_k(recall_dict, test_labels, k=5):
     rr_sum, total = 0.0, 0
     for uid, true_item in test_labels.items():
         if uid not in recall_dict:
+            total += 1
             continue
         candidates = recall_dict[uid]
         if isinstance(candidates[0], tuple):
@@ -46,7 +48,7 @@ def mrr_at_k(recall_dict, test_labels, k=5):
         total += 1
     return rr_sum / total if total > 0 else 0.0
 
-
+# AUC 看全局区分，NDCG 看头部排序。
 def evaluate_recall(recall_dict, test_labels, k_list=(5, 10, 20, 50)):
     """Evaluate recall and MRR at multiple k values."""
     results = {}
@@ -85,7 +87,7 @@ def evaluate_ranking(y_true, y_pred, user_ids=None, k=5):
     return results
 
 
-def _ndcg_at_k(y_true, y_pred, user_ids, k=5):
+def _ndcg_at_k(y_true, y_pred, user_ids, k=5):  # Normalized Discounted Cumulative Gain 归一化折损累计增益
     """Compute mean NDCG@k grouped by user_id."""
     from collections import defaultdict
     user_data = defaultdict(list)

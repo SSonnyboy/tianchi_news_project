@@ -24,7 +24,7 @@ COL_CATEGORY = "category_id"
 COL_WORDS = "words_count"
 COL_CREATED = "created_at_ts"
 
-# Context feature columns
+# Context feature columns 上下文场景特征
 CONTEXT_COLS = [
     "click_environment", "click_deviceGroup", "click_os",
     "click_country", "click_region", "click_referrer_type",

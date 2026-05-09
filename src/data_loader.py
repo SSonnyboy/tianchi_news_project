@@ -18,6 +18,7 @@ def load_raw_data():
         article_df: article metadata (article_id, category_id, created_at_ts, words_count)
         article_emb_df: article embeddings (article_id, emb_0..emb_249) or None
     """
+    # 这种操作读取占用内存小 速度快
     click_dtypes = {
         COL_USER: "int32", COL_ITEM: "int32", COL_TIME: "int64",
         "click_environment": "int8", "click_deviceGroup": "int8",
@@ -37,7 +38,7 @@ def load_raw_data():
         except FileNotFoundError:
             article_emb_df = None
 
-    click_df = click_df.drop_duplicates(subset=[COL_USER, COL_ITEM, COL_TIME])
+    click_df = click_df.drop_duplicates(subset=[COL_USER, COL_ITEM, COL_TIME])  # 这三列如果都相同实际上是重复的点击记录，去重后更干净
     click_df = click_df.sort_values([COL_USER, COL_TIME]).reset_index(drop=True)
 
     print(f"Clicks: {len(click_df):,}, Users: {click_df[COL_USER].nunique():,}, "
@@ -61,27 +62,29 @@ def leave_one_out_split(click_df):
     train_df = click_df.drop(last_clicks.index).reset_index(drop=True)
 
     # Single-click users: add their only click back to train
-    single_click_users = set(test_labels.keys()) - set(train_df[COL_USER].unique())
-    if single_click_users:
-        single_rows = click_df[click_df[COL_USER].isin(single_click_users)]
-        train_df = pd.concat([train_df, single_rows], ignore_index=True)
-        train_df = train_df.sort_values([COL_USER, COL_TIME]).reset_index(drop=True)
-
+    # single_click_users = set(test_labels.keys()) - set(train_df[COL_USER].unique())
+    # if single_click_users:
+    #     single_rows = click_df[click_df[COL_USER].isin(single_click_users)]
+    #     train_df = pd.concat([train_df, single_rows], ignore_index=True)
+    #     train_df = train_df.sort_values([COL_USER, COL_TIME]).reset_index(drop=True)
+    # 
     print(f"LOO split: train={len(train_df):,} clicks, test={len(test_labels):,} users")
     return train_df, test_labels
 
 
 def build_user_item_time_dict(click_df):
+    # 构建用户-物品索引 字典，键是用户ID，值是一个列表，列表中的元素是一个元组，包含物品ID和时间戳。列表按照时间戳排序。
     """Build {user_id: [(item_id, timestamp), ...]} sorted by time."""
     d = defaultdict(list)
     for row in click_df[[COL_USER, COL_ITEM, COL_TIME]].itertuples(index=False):
         d[row[0]].append((row[1], row[2]))
     for uid in d:
-        d[uid].sort(key=lambda x: x[1])
+        d[uid].sort(key=lambda x: x[1])  # 按时间戳排序
     return dict(d)
 
 
 def build_item_user_time_dict(click_df):
+    # 构建物品-用户索引 字典，键是物品ID，值是一个列表，列表中的元素是一个元组，包含用户ID和时间戳。列表按照时间戳排序。
     """Build {item_id: [(user_id, timestamp), ...]} sorted by time."""
     d = defaultdict(list)
     for row in click_df[[COL_USER, COL_ITEM, COL_TIME]].itertuples(index=False):
@@ -107,7 +110,7 @@ def build_item_info_dicts(article_df):
     ts_min, ts_max = created_ts.min(), created_ts.max()
     item_created_time_dict = dict(
         zip(article_df["article_id"], (created_ts - ts_min) / (ts_max - ts_min + 1e-8))
-    )
+    )  # 归一化物品创建时间特征 为什么要归一化？因为原始的时间戳数值很大，直接使用可能会导致模型训练不稳定，归一化后数值范围在0-1之间，更适合模型学习。
     item_created_abs_time_dict = dict(zip(article_df["article_id"], article_df[COL_CREATED]))
 
     return {
@@ -120,12 +123,13 @@ def build_item_info_dicts(article_df):
 
 def build_item_emb_dict(article_emb_df):
     """Build {article_id: np.array(250,)} from embedding CSV, L2-normalized."""
+    
     if article_emb_df is None:
         return {}
     emb_cols = [c for c in article_emb_df.columns if c.startswith("emb_")]
-    ids = article_emb_df["article_id"].values
-    embs = article_emb_df[emb_cols].values.astype(np.float32)
-    norms = np.linalg.norm(embs, axis=1, keepdims=True)
+    ids = article_emb_df["article_id"].values   # shape: (255755,)
+    embs = article_emb_df[emb_cols].values.astype(np.float32)   # shape: (255755, 250)
+    norms = np.linalg.norm(embs, axis=1, keepdims=True)  # shape: (255755, 1)
     norms[norms == 0] = 1.0
     embs = embs / norms
     return dict(zip(ids, embs))

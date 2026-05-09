@@ -27,7 +27,7 @@ def reduce_mem(df):
     print(f"Memory: {start_mem:.1f}MB -> {end_mem:.1f}MB ({100*(start_mem-end_mem)/start_mem:.0f}% reduction)")
     return df
 
-
+# 自动打印计时工具
 class Timer:
     """Context manager for timing code blocks."""
     def __init__(self, label=""):
