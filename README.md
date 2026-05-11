@@ -1,17 +1,8 @@
-# 天池新闻推荐竞赛 - 统一学习代码库
+# 天池新闻推荐竞赛 - 推荐系统学习项目
 
 ## 项目简介
 
-本项目将天池新闻推荐竞赛的 4 份获奖方案整合为一个统一的代码库，用于学习推荐系统的召回与排序流程。
-
-| 方案 | 召回策略 | 排序模型 |
-|------|---------|---------|
-| **S1** | ItemCF (加权) + YouTubeDNN | 无 (纯召回) |
-| **S2** | ItemCF + Bi-network + Word2Vec | LightGBM Classifier |
-| **S3** | 热门召回 + 30秒间隔 i2i | LightGBM Ranker |
-| **S5** | ItemCF + Swing + Item2Vec | LightGBM Ranker |
-
-所有方案共享相同的数据划分（Leave-One-Out）和评估指标，可直接横向对比。
+基于天池新闻推荐竞赛数据，实现完整的召回-排序推荐系统 pipeline。召回阶段采用 4 路融合（ItemCF、Swing、YouTubeDNN、冷启动），排序阶段以 LightGBM LambdaRanker 为基线，并讨论 DCN、DeepFM、AutoTINT、RankMixer 等特征交叉模型。
 
 ## 项目结构
 
@@ -20,26 +11,61 @@
 │   ├── config.py               # 路径与超参数配置
 │   ├── data_loader.py          # 数据加载、LOO 划分、字典构建
 │   ├── metrics.py              # Recall@K, MRR@K, AUC, NDCG@K
-│   ├── features.py             # 排序特征工程
+│   ├── features.py             # 排序特征工程 (19 维)
 │   ├── negative_sampling.py    # 负采样策略
-│   ├── recall/                 # 8 种召回算法
-│   │   ├── itemcf.py           # ItemCF (3 种变体)
-│   │   ├── binetwork.py        # Bi-network
+│   ├── recall/                 # 召回算法
+│   │   ├── itemcf.py           # ItemCF (加权变体)
 │   │   ├── swing.py            # Swing 算法
-│   │   ├── i2i_30s.py          # 30 秒间隔 i2i
-│   │   ├── hot.py              # 热门召回
-│   │   ├── word2vec_recall.py  # Word2Vec + Annoy
-│   │   ├── item2vec_recall.py  # Item2Vec + Faiss
 │   │   ├── youtube_dnn.py      # YouTubeDNN 双塔模型
+│   │   ├── hot.py              # 热门召回
+│   │   ├── i2i_30s.py          # 30 秒间隔 i2i
 │   │   └── combiner.py         # 多路召回融合
 │   └── ranking/                # 排序模型
-│       ├── lgb_classifier.py   # LightGBM Classifier
-│       └── lgb_ranker.py       # LightGBM Ranker (LambdaRank)
-├── solutions/                  # 4 个方案流水线
-├── notebooks/                  # 对比实验 notebook
+│       ├── lgb_ranker.py       # LightGBM Ranker (LambdaRank)
+│       └── base.py             # 排序模型基类
+├── solutions/                  # 方案流水线
+│   ├── base_pipeline.py        # 基类 (load -> recall -> ranking -> evaluate)
+│   └── solution_unified.py     # 统一方案: 4 路召回 + LGB Ranker
+├── docs/                       # 技术文档
+│   ├── feature_crossing.md     # 特征交叉模型讨论 (DCN/DeepFM/AutoTINT/RankMixer)
+│   ├── data_process.md         # 数据处理说明
+│   └── metric.md               # 评估指标说明
+├── notebooks/                  # 实验 notebook
 ├── data/                       # 原始数据 (需自行下载)
 └── outputs/                    # 缓存与结果
 ```
+
+## 召回架构
+
+4 路召回融合，每路独立打分后加权合并：
+
+| 通道 | 算法 | 权重 | 说明 |
+|------|------|------|------|
+| ItemCF | 加权 ItemCF | 1.0 | 基于点击共现 + 位置衰减 + 创建时间相似度 |
+| Swing | Swing 算法 | 1.0 | 基于用户对共点击物品的交互模式 |
+| YouTubeDNN | 双塔 DNN | 1.2 | user tower (embedding + mean pooling + DNN) vs item tower |
+| 冷启动 | Hot + 30s-i2i | 0.8 | 热门召回 + 30 秒间隔 i2i 合并，覆盖新用户/新物品 |
+
+融合方式：per-user MinMax 归一化 -> 加权求和 -> Top-50
+
+## 排序架构
+
+### 基线：LightGBM LambdaRanker
+
+- **损失函数**: LambdaRank（直接优化 NDCG）
+- **特征**: 19 维（用户统计、物品统计、时间差、文本差异、上下文、交叉、召回分数）
+- **验证**: 80/20 用户划分，GroupKFold
+
+### 特征交叉模型探索方向
+
+详见 `docs/feature_crossing.md`：
+
+| 模型 | 核心思路 | 优势 |
+|------|---------|------|
+| DCN-V2 | Cross Network 显式有限阶交叉 | 参数效率高，工业界广泛使用 |
+| DeepFM | FM 二阶 + DNN 高阶并行 | 无需手工特征工程 |
+| AutoTINT | Self-Attention 自动发现交互 | 可解释性强 |
+| RankMixer | MLP-Mixer token-mixing | 高效，适合特征数多的场景 |
 
 ## 快速开始
 
@@ -57,24 +83,17 @@ pip install -r requirements.txt
 - `articles.csv` - 文章元信息 (36 万篇)
 - `articles_emb.csv` - 文章 embedding (250 维)
 
-### 3. 运行对比实验
-
-```bash
-cd notebooks
-jupyter notebook 01_run_all_solutions.ipynb
-```
-
-或在 Python 中直接调用：
+### 3. 运行
 
 ```python
-from solutions.solution1_news_recommender import Solution1NewsRecommender
-s1 = Solution1NewsRecommender()
-metrics = s1.run()  # 加载 → 召回 → 评估
+from solutions.solution_unified import SolutionUnified
+pipeline = SolutionUnified()
+metrics = pipeline.run()
 ```
 
 ## 数据划分
 
-采用 **Leave-One-Out** 划分：按时间排序后，每个用户的最后一次点击作为测试标签，其余作为训练数据。这是学术推荐系统论文中最标准的评估协议。
+采用 **Leave-One-Out** 划分：按时间排序后，每个用户的最后一次点击作为测试标签，其余作为训练数据。
 
 ## 评估指标
 
@@ -84,34 +103,3 @@ metrics = s1.run()  # 加载 → 召回 → 评估
 | 召回 | MRR@5 | 平均倒数排名 (前 5) |
 | 排序 | AUC | ROC 曲线下面积 |
 | 排序 | NDCG@5 | 归一化折损累积增益 (前 5) |
-
-## 核心算法速查
-
-### 召回算法
-
-| 算法 | 来源 | 核心公式 |
-|------|------|---------|
-| ItemCF | S1/S2/S5 | `sim[i][j] += loc_weight / log(len+1)`, 归一化 `sqrt(cnt_i * cnt_j)` |
-| Bi-network | S2 | `sim[i][j] += 1 / (log(users_i+1) * log(items_u+1))` |
-| Swing | S5 | `sim[i][j] += 1 / (alpha + \|co_users\|)`, alpha=5.0 |
-| 30s-i2i | S3 | 统计恰好间隔 30 秒点击的文章对共现次数 |
-| YouTubeDNN | S1 | 双塔: user_emb = DNN(user_emb \|\| mean(hist_emb)), dot(item_emb) |
-
-### 排序模型
-
-| 模型 | 方案 | 损失函数 |
-|------|------|---------|
-| LGBClassifier | S2 | Binary Cross-Entropy (pointwise) |
-| LGBRanker | S3/S5 | LambdaRank (listwise, 直接优化 NDCG) |
-
-### 负采样策略
-
-| 策略 | 方案 | 说明 |
-|------|------|------|
-| 召回即负样本 | S2 | 召回候选中非 ground-truth 的作为负样本 |
-| 双轴采样 | S3/S5 | 按用户 + 按物品两个维度各采样 1-5 个负样本 |
-
-
-
-
-

@@ -3,7 +3,6 @@ numpy>=1.21.0
 scikit-learn>=1.0.0
 lightgbm>=3.3.0
 gensim>=4.0.0
-annoy>=1.17.0
 faiss-cpu>=1.7.0
 torch>=1.10.0
 tqdm>=4.62.0

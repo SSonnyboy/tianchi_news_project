@@ -4,11 +4,11 @@
 
 本指南帮助你从零开始啃下这份推荐系统代码库，按"由浅入深、先跑通再理解"的原则组织。每一步都对应面试高频考点。
 
-建议总时长：10 天（每天 2-3 小时）。
+建议总时长：7 天（每天 2-3 小时）。
 
 ---
 
-## 阶段 1: 跑通全链路 (1-2 天)
+## 阶段 1: 跑通全链路 (1 天)
 
 **目标**：先跑起来，建立直觉。
 
@@ -21,17 +21,17 @@ pip install -r requirements.txt
 #    - articles.csv
 #    - articles_emb.csv
 
-# 3. 运行最简单的方案
+# 3. 运行统一方案
 python -c "
-from solutions.solution1_news_recommender import Solution1NewsRecommender
-s1 = Solution1NewsRecommender()
-metrics = s1.run()
+from solutions.solution_unified import SolutionUnified
+pipeline = SolutionUnified()
+metrics = pipeline.run()
 "
 ```
 
-观察输出的 Recall@5、MRR@5 是多少，不需要理解代码细节。
+观察输出的 Recall@5、NDCG@5 是多少，不需要理解代码细节。
 
-**面试价值**：能说清"我跑通了一个推荐系统的召回+评估流程"。
+**面试价值**：能说清"我实现了一个完整的推荐系统召回+排序 pipeline"。
 
 ---
 
@@ -62,7 +62,7 @@ metrics = s1.run()
 
 ---
 
-## 阶段 3: 攻克召回算法 (3-5 天)
+## 阶段 3: 攻克召回算法 (2-3 天)
 
 **核心文件**：`src/recall/` 目录
 
@@ -89,24 +89,14 @@ sim[i][j] += loc_alpha * decay^(|loc_diff|-1) / log(history_len + 1)
 - ItemCF 的计算复杂度是什么？→ O(N * L^2)，N=用户数，L=平均历史长度
 - 如何优化？→ 倒排索引、只计算热门物品对、稀疏矩阵
 
-### 第 2 步：热门召回 (`src/recall/hot.py`)
+### 第 2 步：热门召回 + 30s-i2i (`src/recall/hot.py`, `src/recall/i2i_30s.py`)
 
-最简单的召回策略，10 行代码。按全局点击量排序，加时间窗口过滤。
+热门召回：最简单的召回策略，10 行代码。按全局点击量排序，加时间窗口过滤。
+30s-i2i：统计恰好间隔 30 秒点击的文章对共现次数，利用竞赛数据的领域特定模式。
 
 **面试追问**：热门召回的缺点是什么？→ 无法个性化，所有用户看到一样的结果。
 
-### 第 3 步：Bi-network (`src/recall/binetwork.py`)
-
-**核心公式**：
-```
-sim[i][j] += 1 / (log(users_of_i + 1) * log(items_of_user + 1))
-```
-
-IDF 加权的共现计数：物品 i 被越多用户点击（越热门），权重越低；用户 u 点击越多物品（越活跃），贡献越小。
-
-**面试对比**：和 ItemCF 的区别？→ ItemCF 是用户维度的共现，Bi-network 是物品-用户-物品的二部图传播。
-
-### 第 4 步：Swing (`src/recall/swing.py`)
+### 第 3 步：Swing (`src/recall/swing.py`)
 
 **核心公式**：
 ```
@@ -118,7 +108,7 @@ alpha = 5.0
 
 **面试高频**：Swing 和 ItemCF 的核心区别？→ Swing 通过"用户对共交互图"引入了更严格的共现约束，能过滤掉热门噪声。
 
-### 第 5 步：YouTubeDNN (`src/recall/youtube_dnn.py`)
+### 第 4 步：YouTubeDNN (`src/recall/youtube_dnn.py`)
 
 **架构理解**：
 ```
@@ -141,7 +131,7 @@ Score = dot(user_emb, item_emb)
 - 负采样怎么做？→ 随机从用户未点击的物品中采样
 - Faiss 是什么？→ Facebook 的向量检索库，支持亿级向量的毫秒级检索
 
-### 第 6 步：多路召回融合 (`src/recall/combiner.py`)
+### 第 5 步：多路召回融合 (`src/recall/combiner.py`)
 
 **流程**：
 1. 每路召回的分数做 per-user MinMax 归一化到 [0, 1]
@@ -175,62 +165,45 @@ Score = dot(user_emb, item_emb)
 
 ### 第 2 步：负采样 (`src/negative_sampling.py`)
 
-| 策略 | 说明 | 使用方案 |
-|------|------|---------|
-| 召回即负样本 | 召回候选中非 ground-truth 的都是负样本 | S2 |
-| 双轴采样 | 按用户 + 按物品各采样 1-5 个，取并集 | S3/S5 |
+使用双轴采样策略：按用户 + 按物品各采样 1-5 个负样本，取并集。保证正负样本多样性。
 
 **面试追问**：正负样本比例不平衡怎么办？→ 负采样、Focal Loss、调整类别权重。
 
-### 第 3 步：排序模型
+### 第 3 步：排序模型 (`src/ranking/lgb_ranker.py`)
 
-**pointwise (`lgb_classifier.py`)**：
-- 二分类：每个 (user, item) 独立预测点击概率
-- 损失函数：Binary Cross-Entropy
-- 优点：简单，实现容易
-- 缺点：没有考虑同一用户候选之间的相对顺序
-
-**listwise (`lgb_ranker.py`)**：
+**LightGBM LambdaRanker**：
 - 直接优化排序指标 NDCG
-- 损失函数：LambdaRank
+- 损失函数：LambdaRank（listwise）
 - 优点：直接优化最终评估指标
-- 缺点：需要 group 信息（每个用户的候选为一组）
+- 需要 group 信息（每个用户的候选为一组）
 
 **面试重点**：pointwise / pairwise / listwise 三种排序思路的区别：
 - pointwise：把排序当分类/回归，独立预测每个文档的分数
 - pairwise：比较文档对的相对顺序（如 RankNet）
 - listwise：直接优化整个列表的排序指标（如 LambdaRank、ListNet）
 
----
+### 第 4 步：特征交叉模型探索
 
-## 阶段 5: 横向对比 4 个方案 (1 天)
+详见 `docs/feature_crossing.md`，讨论 DCN、DeepFM、AutoTINT、RankMixer 四种深度特征交叉模型：
 
-**核心文件**：`solutions/` 目录
-
-| 维度 | S1 | S2 | S3 | S5 |
-|------|----|----|----|-----|
-| 召回路数 | 2 | 3 | 2 | 3 |
-| 召回方法 | ItemCF + YouTubeDNN | ItemCF + BiNet + W2V | Hot + 30s-i2i | ItemCF + Swing + Item2Vec |
-| 排序模型 | 无 | LGBClassifier | LGBRanker | LGBRanker |
-| 负采样 | 随机 1:4 | 召回即负 | 双轴 | 双轴 |
-| 交叉验证 | 无 | 5-fold GroupKFold | 80/20 用户划分 | 80/20 用户划分 |
-
-**面试场景**："你这个项目用了哪些方法？哪个效果最好？为什么？"
-
-**参考回答**：
-> 我实现了 4 种方案。召回阶段效果最大的提升来自多路融合和高质量的相似度算法（如 Swing、YouTubeDNN）。排序阶段 LambdaRank 比 Classifier 略好，因为直接优化 NDCG。负采样策略对排序效果影响很大，双轴采样比随机采样更好。
+| 模型 | 核心思路 | 面试关键词 |
+|------|---------|-----------|
+| DCN-V2 | Cross Network 显式有限阶交叉 | 低秩分解、MoE |
+| DeepFM | FM 二阶 + DNN 高阶并行 | 自动特征工程、无需手工交叉 |
+| AutoTINT | Self-Attention 自动发现交互 | 可解释性、全局交互 |
+| RankMixer | MLP-Mixer token-mixing | 高效替代 Attention |
 
 ---
 
-## 阶段 6: 能讲清楚项目 (1 天)
+## 阶段 5: 能讲清楚项目 (1 天)
 
 ### 30 秒版本
 
-> 我复现了天池新闻推荐竞赛的 4 份获奖方案，包含 8 种召回算法和 2 种排序模型。数据用 Leave-One-Out 划分，评估指标是 Recall@K 和 NDCG@5。
+> 我实现了一个新闻推荐系统，召回阶段用 ItemCF、Swing、YouTubeDNN、冷启动 4 路融合，排序阶段用 LightGBM LambdaRanker，并探索了 DCN、DeepFM 等深度特征交叉模型。
 
 ### 3 分钟版本
 
-> 整个系统分召回和排序两阶段。召回阶段我实现了 ItemCF、Bi-network、Swing、YouTubeDNN 等 8 种算法，通过多路融合取 top-50 候选。排序阶段用 LightGBM 对候选打分，对比了 pointwise (Classifier) 和 listwise (LambdaRank) 两种思路。特征工程包含用户统计、物品统计、时间差、相似度等 19 维特征。负采样用了双轴策略保证多样性。
+> 整个系统分召回和排序两阶段。召回阶段我实现了 4 路融合：ItemCF（基于点击共现加权）、Swing（基于用户对共交互模式）、YouTubeDNN（双塔神经网络 + Faiss 检索）、冷启动通道（热门 + 30s-i2i）。排序阶段用 LightGBM LambdaRanker 直接优化 NDCG，特征工程包含用户统计、物品统计、时间差、相似度等 19 维特征，负采样用双轴策略。在此基础上，我研究了 DCN、DeepFM、AutoTINT、RankMixer 等深度特征交叉模型，分析了它们在显式交叉阶数、参数效率、可解释性上的 trade-off。
 
 ### 深挖准备
 
@@ -239,9 +212,9 @@ Score = dot(user_emb, item_emb)
 | ItemCF 的时间复杂度？如何加速？ | O(N * L^2)，用倒排索引优化到 O(N * L * K) |
 | YouTubeDNN 为什么用双塔？ | 可以预计算 item embedding，在线只需 user embedding + ANN 检索 |
 | LambdaRank 和 GBDT 的区别？ | LambdaRank 是 listwise 损失，直接优化 NDCG；GBDT 是 pointwise |
-| 冷启动怎么处理？ | 热门兜底 + embedding 相似度 + 内容特征 |
-| 如何处理数据稀疏？ | 负采样、embedding 降维、引入 side information |
-| 多路召回融合的权重怎么定？ | 离线评估各路召回率，按效果手动调参或自动调参 |
+| 冷启动怎么处理？ | 热门兜底 + 30s-i2i 领域模式 + embedding 相似度 |
+| 多路召回融合的权重怎么定？ | 离线评估各路召回率，按效果手动调参 |
+| DCN 和 DeepFM 的核心区别？ | DCN 用 Cross Network 做显式有限阶交叉，DeepFM 用 FM 做二阶 + DNN 做高阶 |
 
 ---
 
@@ -249,10 +222,10 @@ Score = dot(user_emb, item_emb)
 
 完成以下检查说明你已掌握这个项目：
 
-- [ ] 能独立画出 S1 方案的完整流程图（数据加载 → LOO 划分 → ItemCF 召回 → YouTubeDNN 召回 → 融合 → 评估）
+- [ ] 能独立画出完整流程图（数据加载 → LOO 划分 → 4 路召回 → 融合 → 特征工程 → 排序 → 评估）
 - [ ] 能解释 ItemCF 的加权公式中每个因子的含义
 - [ ] 能说清楚 YouTubeDNN 双塔的训练和推理流程
-- [ ] 能对比 pointwise 和 listwise 排序的区别
-- [ ] 能解释为什么需要负采样以及两种负采样策略的区别
-- [ ] 能说出 4 个方案的核心差异
+- [ ] 能对比 Swing 和 ItemCF 的区别
+- [ ] 能解释 LambdaRank 的 listwise 思路
+- [ ] 能说明 DCN、DeepFM、RankMixer 的核心区别
 - [ ] 能用 30 秒和 3 分钟两个版本介绍这个项目
