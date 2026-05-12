@@ -6,7 +6,7 @@ import numpy as np
 import lightgbm as lgb
 from src.ranking.base import BaseRanker
 
-
+# LightGBM
 class LGBLambdaRanker(BaseRanker):
     def __init__(self, num_leaves=31, n_estimators=1000, learning_rate=0.01,
                  subsample=0.7, colsample_bytree=0.7, min_child_weight=50,

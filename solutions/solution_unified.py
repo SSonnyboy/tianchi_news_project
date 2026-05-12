@@ -113,6 +113,12 @@ class SolutionUnified(BasePipeline):
             topk=50,
         )
 
+
+#   {
+#       user_id: [(item_id, score), ...],   # 每个用户 top-50 候选
+#       ...
+#   }
+
     def run_ranking(self, recall_dict):
         """Build features, dual-axis negative sampling, train LambdaRank."""
         print("\n[Building ranking features]")

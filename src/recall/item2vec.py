@@ -69,13 +69,13 @@ class Item2VecRecall(BaseRecall):
             item_ids.append(int(iid_str))
             vectors.append(model.wv[idx])
 
-        item_ids = np.array(item_ids, dtype=np.int64)
+        item_ids = np.array(item_ids, dtype=np.int64)  # {词: 内部索引} 的字典
         vectors = np.array(vectors, dtype=np.float32)
 
         # Normalize for cosine similarity (inner product on unit vectors)
         faiss.normalize_L2(vectors)
 
-        index = faiss.IndexFlatIP(self.embedding_dim)
+        index = faiss.IndexFlatIP(self.embedding_dim)  # 暴力搜索 非最近邻
         index.add(vectors)
 
         result = {
