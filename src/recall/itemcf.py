@@ -43,13 +43,14 @@ class ItemCFRecall(BaseRecall):
             for i in range(n):
                 item_i, time_i = item_time_list[i]
                 item_cnt[item_i] += 1
+
                 for j in range(n):
                     if i == j:
                         continue
                     item_j, time_j = item_time_list[j]
 
                     if self.variant == "baseline":
-                        i2i_count[item_i][item_j] += 1.0 / math.log(1 + n)
+                        i2i_count[item_i][item_j] += 1.0 / math.log(1 + n)  # 惩罚高活跃用户
                     else:
                         # Position direction weight
                         loc_alpha = 1.0 if j > i else 0.7
@@ -68,6 +69,8 @@ class ItemCFRecall(BaseRecall):
                         i2i_count[item_i][item_j] += w
 
         # Normalize
+        # 同样的共现次数 5 次，冷门物品之间的相似度远高于热门物品之间的。
+        # 这正是我们想要的——冷门物品的共现更能说明真实的兴趣关联，热门物品的共现更多是"碰巧都点了"。
         i2i_sim = defaultdict(dict)
         for item_i, related in i2i_count.items():
             for item_j, wij in related.items():

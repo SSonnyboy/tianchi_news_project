@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-基于天池新闻推荐竞赛数据，实现完整的召回-排序推荐系统 pipeline。召回阶段采用 4 路融合（ItemCF、Swing、YouTubeDNN、冷启动），排序阶段以 LightGBM LambdaRanker 为基线，并讨论 DCN、DeepFM、AutoTINT、RankMixer 等特征交叉模型。
+基于天池新闻推荐竞赛数据，实现完整的召回-排序推荐系统 pipeline。召回阶段采用 5 路融合（ItemCF、Swing、YouTubeDNN、Item2Vec、Hot），排序阶段以 LightGBM LambdaRanker 为基线，并讨论 DCN、DeepFM、AutoTINT、RankMixer 等特征交叉模型。
 
 ## 项目结构
 
@@ -17,15 +17,15 @@
 │   │   ├── itemcf.py           # ItemCF (加权变体)
 │   │   ├── swing.py            # Swing 算法
 │   │   ├── youtube_dnn.py      # YouTubeDNN 双塔模型
+│   │   ├── item2vec.py         # Item2Vec (Word2Vec + FAISS)
 │   │   ├── hot.py              # 热门召回
-│   │   ├── i2i_30s.py          # 30 秒间隔 i2i
 │   │   └── combiner.py         # 多路召回融合
 │   └── ranking/                # 排序模型
 │       ├── lgb_ranker.py       # LightGBM Ranker (LambdaRank)
 │       └── base.py             # 排序模型基类
 ├── solutions/                  # 方案流水线
 │   ├── base_pipeline.py        # 基类 (load -> recall -> ranking -> evaluate)
-│   └── solution_unified.py     # 统一方案: 4 路召回 + LGB Ranker
+│   └── solution_unified.py     # 统一方案: 5 路召回 + LGB Ranker
 ├── docs/                       # 技术文档
 │   ├── feature_crossing.md     # 特征交叉模型讨论 (DCN/DeepFM/AutoTINT/RankMixer)
 │   ├── data_process.md         # 数据处理说明
@@ -37,14 +37,15 @@
 
 ## 召回架构
 
-4 路召回融合，每路独立打分后加权合并：
+5 路召回融合，每路独立打分后加权合并：
 
 | 通道 | 算法 | 权重 | 说明 |
 |------|------|------|------|
 | ItemCF | 加权 ItemCF | 1.0 | 基于点击共现 + 位置衰减 + 创建时间相似度 |
 | Swing | Swing 算法 | 1.0 | 基于用户对共点击物品的交互模式 |
 | YouTubeDNN | 双塔 DNN | 1.2 | user tower (embedding + mean pooling + DNN) vs item tower |
-| 冷启动 | Hot + 30s-i2i | 0.8 | 热门召回 + 30 秒间隔 i2i 合并，覆盖新用户/新物品 |
+| Item2Vec | Word2Vec + FAISS | 1.0 | Skip-Gram 训练物品向量，FAISS 近似最近邻检索 |
+| Hot | 热门召回 | 0.5 | 全局热门 + 时间窗口过滤，覆盖冷启动 |
 
 融合方式：per-user MinMax 归一化 -> 加权求和 -> Top-50
 

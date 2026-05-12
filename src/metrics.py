@@ -44,11 +44,10 @@ def mrr_at_k(recall_dict, test_labels, k=5):  # 平均倒数排名（Mean Recipr
         for rank, item in enumerate(candidates[:k], 1):
             if item == true_item:
                 rr_sum += 1.0 / rank
-                break
+                break   # 只看一个正确答案
         total += 1
     return rr_sum / total if total > 0 else 0.0
 
-# AUC 看全局区分，NDCG 看头部排序。
 def evaluate_recall(recall_dict, test_labels, k_list=(5, 10, 20, 50)):
     """Evaluate recall and MRR at multiple k values."""
     results = {}
@@ -60,7 +59,7 @@ def evaluate_recall(recall_dict, test_labels, k_list=(5, 10, 20, 50)):
         print(f"  {name}: {val:.4f}")
     return results
 
-
+# AUC 看全局区分，NDCG 看头部排序。
 def evaluate_ranking(y_true, y_pred, user_ids=None, k=5):
     """Evaluate ranking with AUC and NDCG@k.
 
